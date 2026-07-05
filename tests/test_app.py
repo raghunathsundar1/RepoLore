@@ -245,6 +245,15 @@ def test_remote_mcp_traverses_a_generated_bundle(client, monkeypatch):
         assert bad.get("isError") is True
 
 
+def test_orphaned_jobs_marked_failed_on_startup(client):
+    app_module._create_job("orphan-job", total=3)
+    with TestClient(app_module.app):  # running the lifespan simulates a restart
+        pass
+    job = client.get("/jobs/orphan-job").json()
+    assert job["status"] == "error"
+    assert "restart" in job["error"]
+
+
 def test_healthz_ok_and_security_headers(client):
     res = client.get("/healthz")
     assert res.status_code == 200

@@ -165,7 +165,12 @@ docker build -t repolore .
 docker run -p 8000:8000 -e OPENAI_API_KEY=sk-... -v repolore-data:/app/data repolore
 ```
 
-Or without Docker: `uvicorn app:app --host 0.0.0.0 --port 8000` (no `--reload`).
+Or without Docker (behind any proxy/load balancer, keep the proxy flags — without
+them all visitors share one IP, one rate limit, and one free tier):
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips "*"
+```
 
 Operational notes:
 

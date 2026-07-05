@@ -29,4 +29,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4).status==200 else 1)"
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers + forwarded-allow-ips: behind a platform proxy (Render, Railway,
+# nginx) the real client IP arrives in X-Forwarded-For. Without this, every visitor
+# shares the proxy's IP — one global rate limit and ONE free tier for all users.
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

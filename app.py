@@ -167,6 +167,18 @@ async def _lifespan(_app: FastAPI):
         _cleanup_old_jobs()
     except Exception:
         logger.exception("job retention cleanup failed (continuing)")
+    # Single-worker app: any job still pending/running at startup was orphaned by a
+    # restart mid-generation — mark it failed so clients stop polling a dead job.
+    try:
+        with _db() as conn:
+            orphaned = conn.execute(
+                "UPDATE jobs SET status = 'error', error = 'Generation was interrupted by a server restart. Please try again.' "
+                "WHERE status IN ('pending', 'running')"
+            ).rowcount
+        if orphaned:
+            logger.warning("marked %d orphaned job(s) as failed after restart", orphaned)
+    except Exception:
+        logger.exception("orphaned-job sweep failed (continuing)")
     # The remote MCP transport (mounted at /mcp) needs its session manager running.
     async with remote_mcp.session_manager.run():
         yield
