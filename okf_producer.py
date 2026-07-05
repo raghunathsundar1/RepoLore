@@ -48,7 +48,7 @@ def draft_concept(concept: Concept, source: str) -> str:
     """Call the LLM to draft prose explaining a single concept file."""
     from langchain_openai import ChatOpenAI
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, timeout=60, max_retries=2)
     prompt = (
         "You are documenting a codebase one file at a time for a knowledge base.\n"
         f"File path: {concept.path}\n"

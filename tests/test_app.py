@@ -140,6 +140,40 @@ def test_ask_unknown_bundle_404(client):
     assert client.post("/ask", json={"question": "hi", "bundle_id": "nope"}).status_code == 404
 
 
+def test_ask_rejects_oversized_question(client, monkeypatch):
+    job_id = _make_done_bundle(client, monkeypatch)
+    big = "x" * (app_module.MAX_QUESTION_CHARS + 1)
+    assert client.post("/ask", json={"question": big, "bundle_id": job_id}).status_code == 413
+
+
+def test_healthz_ok_and_security_headers(client):
+    res = client.get("/healthz")
+    assert res.status_code == 200
+    assert res.json() == {"status": "ok"}
+    assert res.headers["X-Content-Type-Options"] == "nosniff"
+    assert res.headers["X-Frame-Options"] == "DENY"
+
+
+def test_cleanup_old_jobs_removes_stale_rows_and_dirs(client):
+    import datetime
+
+    # One fresh job, one stale job (backdated), each with an on-disk dir.
+    app_module._create_job("fresh-job", total=1)
+    app_module._create_job("stale-job", total=1)
+    old = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
+    with app_module._db() as conn:
+        conn.execute("UPDATE jobs SET created_at = ? WHERE id = 'stale-job'", (old,))
+    os.makedirs(os.path.join(app_module.JOBS_DIR, "stale-job"), exist_ok=True)
+    os.makedirs(os.path.join(app_module.JOBS_DIR, "fresh-job"), exist_ok=True)
+
+    removed = app_module._cleanup_old_jobs(retention_days=7)
+    assert removed == 1
+    assert not os.path.exists(os.path.join(app_module.JOBS_DIR, "stale-job"))
+    assert os.path.exists(os.path.join(app_module.JOBS_DIR, "fresh-job"))
+    assert client.get("/jobs/stale-job").status_code == 404
+    assert client.get("/jobs/fresh-job").status_code == 200
+
+
 def test_generate_tiny_repo_runs_synchronously(client, monkeypatch):
     monkeypatch.setattr(app_module, "_clone_shallow", _fake_clone_factory(SAMPLE))
     monkeypatch.setattr(app_module, "build_bundle", _fake_build_bundle)

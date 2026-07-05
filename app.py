@@ -4,6 +4,7 @@ See CLAUDE.md web-app rules: shallow clone with cleanup, cap file count, backgro
 job with progress for anything but tiny repos, fail gracefully on bad repos.
 """
 import json
+import logging
 import os
 import re
 import shutil
@@ -14,7 +15,7 @@ import time
 import uuid
 import zipfile
 from collections import defaultdict, deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -26,16 +27,23 @@ from graph import build_graph
 from okf_producer import build_bundle
 from okf_scanner import Concept, scan_repo
 
+logger = logging.getLogger("repolore")
+
 GITHUB_URL_RE = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+?(\.git)?/?$")
-MAX_FILES = 200
-TINY_THRESHOLD = 5
-CLONE_TIMEOUT_SECONDS = 60
+
+# Operational limits — overridable via environment for deployment tuning.
+MAX_FILES = int(os.environ.get("REPOLORE_MAX_FILES", "200"))
+TINY_THRESHOLD = int(os.environ.get("REPOLORE_TINY_THRESHOLD", "5"))
+CLONE_TIMEOUT_SECONDS = int(os.environ.get("REPOLORE_CLONE_TIMEOUT", "60"))
+MAX_QUESTION_CHARS = int(os.environ.get("REPOLORE_MAX_QUESTION_CHARS", "2000"))
+JOB_RETENTION_DAYS = int(os.environ.get("REPOLORE_JOB_RETENTION_DAYS", "7"))
 
 # Simple in-process per-IP rate limits — each request drives LLM calls, so this
 # protects against an endpoint being hammered. /generate is stricter (a full
 # clone + one call per file); /ask is lighter (two calls per question).
-RATE_LIMIT = 5          # /generate: max requests
-ASK_RATE_LIMIT = 30     # /ask: max requests
+# NOTE: in-process state (with SQLite + BackgroundTasks) means: run ONE worker.
+RATE_LIMIT = int(os.environ.get("REPOLORE_RATE_LIMIT", "5"))          # /generate
+ASK_RATE_LIMIT = int(os.environ.get("REPOLORE_ASK_RATE_LIMIT", "30"))  # /ask
 RATE_WINDOW = 60        # per this many seconds
 _rate_hits = defaultdict(lambda: defaultdict(deque))  # bucket -> ip -> timestamps
 
@@ -88,7 +96,61 @@ def _init_db() -> None:
 
 _init_db()
 
-app = FastAPI(title="RepoLore")
+
+def _cleanup_old_jobs(retention_days: int = JOB_RETENTION_DAYS) -> int:
+    """Delete job rows and their on-disk bundles older than the retention window.
+    Keeps data/ from growing without bound. Returns how many jobs were removed."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    with _db() as conn:
+        rows = conn.execute("SELECT id FROM jobs WHERE created_at < ?", (cutoff,)).fetchall()
+        old_ids = [row["id"] for row in rows]
+        if old_ids:
+            conn.executemany("DELETE FROM jobs WHERE id = ?", [(i,) for i in old_ids])
+    for job_id in old_ids:
+        shutil.rmtree(os.path.join(JOBS_DIR, job_id), ignore_errors=True)
+    if old_ids:
+        logger.info("cleaned up %d job(s) older than %d day(s)", len(old_ids), retention_days)
+    return len(old_ids)
+
+
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    if not os.environ.get("OPENAI_API_KEY"):
+        logger.warning(
+            "OPENAI_API_KEY is not set - /generate and /ask will fail at the LLM step. "
+            "Set it in the environment or a .env file."
+        )
+    try:
+        _cleanup_old_jobs()
+    except Exception:
+        logger.exception("job retention cleanup failed (continuing)")
+    yield
+
+
+app = FastAPI(title="RepoLore", lifespan=_lifespan)
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    return response
+
+
+@app.get("/healthz")
+def healthz():
+    """Liveness/readiness probe: verifies the job store is reachable."""
+    try:
+        with _db() as conn:
+            conn.execute("SELECT 1")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"job store unavailable: {exc}")
+    return {"status": "ok"}
 
 
 class GenerateRequest(BaseModel):
@@ -110,12 +172,16 @@ def _validate_github_url(url: str) -> None:
 
 def _clone_shallow(url: str) -> str:
     tmp_dir = tempfile.mkdtemp(prefix="repolore_")
+    # GIT_TERMINAL_PROMPT=0 makes private-repo clones fail immediately instead of
+    # hanging on a credential prompt until the timeout.
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
     try:
         result = subprocess.run(
-            ["git", "clone", "--depth", "1", url, tmp_dir],
+            ["git", "clone", "--depth", "1", "--single-branch", "--no-tags", url, tmp_dir],
             capture_output=True,
             text=True,
             timeout=CLONE_TIMEOUT_SECONDS,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -187,7 +253,9 @@ def _run_job(job_id: str, tmp_dir: str, concepts: List[Concept]) -> None:
         build_bundle(tmp_dir, bundle_dir, concepts=concepts, on_progress=on_progress)
         _zip_bundle(bundle_dir, zip_path)
         _finish_job(job_id, zip_path, json.dumps(build_graph(concepts)))
+        logger.info("job %s finished: %d concept(s)", job_id, len(concepts))
     except Exception as exc:
+        logger.exception("job %s failed", job_id)
         _fail_job(job_id, str(exc))
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -297,6 +365,11 @@ def ask(req: AskRequest, request: Request):
     question = req.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is empty.")
+    if len(question) > MAX_QUESTION_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Question is too long ({len(question)} chars; max {MAX_QUESTION_CHARS}).",
+        )
 
     job = _get_job(req.bundle_id)
     if job["status"] != "done":
@@ -314,6 +387,7 @@ def ask(req: AskRequest, request: Request):
     try:
         result = answer_from_bundle(question, bundle_dir, graph["nodes"], graph["edges"])
     except Exception as exc:
+        logger.exception("ask failed for bundle %s", req.bundle_id)
         raise HTTPException(status_code=500, detail=f"Failed to answer: {exc}")
 
     return result

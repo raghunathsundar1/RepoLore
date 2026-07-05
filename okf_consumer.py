@@ -28,7 +28,7 @@ MAX_CONCEPTS = 12     # hard cap on assembled concepts
 def _default_model():
     from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0, timeout=60, max_retries=2)
 
 
 def plan_concepts(question: str, catalog: List[Dict], model_factory: Callable = _default_model) -> List[str]:

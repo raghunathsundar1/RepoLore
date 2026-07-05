@@ -129,13 +129,36 @@ npx -y tailwindcss@3.4.17 -c design/tailwind.config.js -i design/tailwind.input.
 ## Tests
 
 ```bash
-python -m pytest        # 27 tests, no API key required (LLM calls are stubbed)
+python -m pytest        # 40 tests, no API key required (LLM calls are stubbed)
 ```
 
-The suite covers scanner link-resolution, bundle writing, graph shaping, the FastAPI
-layer, and the consumer agent — including a test that a question requiring a link
-between two concepts causes the agent to traverse that link.
+The suite covers scanner link-resolution (Python + JS/TS), bundle writing and
+re-reading, graph shaping, the FastAPI layer, the consumer agent, and the MCP tools —
+including a test that a question requiring a link between two concepts causes the
+agent to traverse that link. CI runs it on every push (`.github/workflows/ci.yml`).
+
+## Deployment
+
+```bash
+docker build -t repolore .
+docker run -p 8000:8000 -e OPENAI_API_KEY=sk-... -v repolore-data:/app/data repolore
+```
+
+Or without Docker: `uvicorn app:app --host 0.0.0.0 --port 8000` (no `--reload`).
+
+Operational notes:
+
+- **Run a single worker.** Rate limits, the SQLite job store, and background jobs are
+  in-process; multiple workers/replicas would need a shared queue (e.g. ARQ + Redis).
+- `GET /healthz` is the liveness/readiness probe (the Docker image wires it up).
+- Generated bundles live under `data/` (a Docker volume); jobs older than
+  `REPOLORE_JOB_RETENTION_DAYS` (default 7) are cleaned up at startup.
+- Tunables via env: `REPOLORE_MAX_FILES`, `REPOLORE_RATE_LIMIT`,
+  `REPOLORE_ASK_RATE_LIMIT`, `REPOLORE_CLONE_TIMEOUT`, `REPOLORE_MAX_QUESTION_CHARS`,
+  `REPOLORE_TINY_THRESHOLD`, `REPOLORE_JOB_RETENTION_DAYS`.
+- Private-repo clone attempts fail fast (no credential prompt hangs); LLM calls have
+  a 60s timeout with retries.
 
 ## License
 
-Not yet specified.
+[MIT](LICENSE)
