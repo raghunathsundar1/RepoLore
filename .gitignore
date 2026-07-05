@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+node_modules/
+
+# design/styles.css and design/vendor/ are built production assets — keep them tracked.
