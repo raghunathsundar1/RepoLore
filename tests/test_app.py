@@ -246,9 +246,10 @@ def test_remote_mcp_traverses_a_generated_bundle(client, monkeypatch):
 
 
 def test_orphaned_jobs_marked_failed_on_startup(client):
+    # The sweep runs in the app lifespan on startup; call it directly (the MCP
+    # session manager only allows one lifespan run per process).
     app_module._create_job("orphan-job", total=3)
-    with TestClient(app_module.app):  # running the lifespan simulates a restart
-        pass
+    assert app_module._fail_orphaned_jobs() == 1
     job = client.get("/jobs/orphan-job").json()
     assert job["status"] == "error"
     assert "restart" in job["error"]
