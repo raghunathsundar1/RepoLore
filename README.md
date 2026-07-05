@@ -21,8 +21,11 @@ retrieval. That visible path is the whole point.
 
 ## Features
 
-- **Deterministic structure, LLM prose.** Links come from real imports resolved with
-  Python's `ast` — the model never invents edges.
+- **Deterministic structure, LLM prose.** Links come from real imports — the model
+  never invents edges.
+- **Multi-language scanning.** Python (stdlib `ast`) and JavaScript/TypeScript
+  (tree-sitter) today, via pluggable per-language resolvers; adding a language is a
+  self-contained resolver. Only internal imports become links; external packages are skipped.
 - **OKF bundle.** Targets the [Open Knowledge Format v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
   (Google Cloud): one markdown concept per file, required `type` frontmatter plus the
   recommended `title`/`description`/`resource`/`tags`/`timestamp`, and inter-concept

@@ -67,7 +67,10 @@ python -m pytest                             # run tests
 - Prefer the standard library; justify every new dependency (lean project).
 
 ## Gotchas
-- Scanner is Python-only (`ast`). Other languages need a different parser; the
-  link-resolution logic stays the same.
+- Scanner is multi-language via pluggable resolvers: Python uses the stdlib `ast`;
+  JavaScript/TypeScript use tree-sitter (relative-import resolution). Add a language
+  by adding a resolver (extensions, concept-id, classify, import extraction) to
+  `RESOLVERS` in `okf_scanner.py`; the rest of the pipeline is unchanged. Only
+  internal (relative/first-party) imports become links — external packages are skipped.
 - CLAUDE.md is guidance (~70% adherence), not enforcement. For hard invariants
   (e.g. "never call the LLM in tests"), enforce in code/test structure, not here.

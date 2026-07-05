@@ -78,7 +78,7 @@ function RepoInput({ value, onChange, onSubmit, busy }) {
         </button>
       </div>
       <p className="mt-3 text-center text-[13px] text-muted">
-        Paste any public GitHub repo. <span className="text-faint">Python supported today.</span>
+        Paste any public GitHub repo. <span className="text-faint">Python, JavaScript & TypeScript supported.</span>
       </p>
     </form>
   );

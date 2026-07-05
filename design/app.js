@@ -115,7 +115,7 @@ function RepoInput({
     className: "mt-3 text-center text-[13px] text-muted"
   }, "Paste any public GitHub repo. ", /*#__PURE__*/React.createElement("span", {
     className: "text-faint"
-  }, "Python supported today.")));
+  }, "Python, JavaScript & TypeScript supported.")));
 }
 
 /* ------------------------------- Hero ---------------------------------- */

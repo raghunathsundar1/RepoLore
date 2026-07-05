@@ -7,7 +7,7 @@ from okf_scanner import Concept, scan_repo
 
 
 def build_graph(concepts: List[Concept]) -> Dict[str, list]:
-    nodes = [{"id": c.id, "path": c.path, "type": c.type} for c in concepts]
+    nodes = [{"id": c.id, "path": c.path, "type": c.type, "language": c.language} for c in concepts]
     edges = [
         {"source": c.id, "target": target}
         for c in concepts
