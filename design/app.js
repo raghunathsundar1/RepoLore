@@ -1165,6 +1165,61 @@ function GraphStage({
   }))));
 }
 
+/* ------------------------- What it is + features ------------------------ */
+
+function WhatIsIt() {
+  return /*#__PURE__*/React.createElement(Reveal, {
+    as: "section",
+    className: "mx-auto max-w-content px-5 sm:px-8 pb-20"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "grid gap-8 lg:grid-cols-[1fr_1.4fr] lg:gap-16"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-mono text-[12px] uppercase tracking-[0.22em] text-faint"
+  }, "What it is"), /*#__PURE__*/React.createElement("h2", {
+    className: "mt-3 text-[26px] sm:text-[30px] font-medium tracking-tight leading-tight text-ink"
+  }, "A knowledge layer for your code.")), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-4 text-[15px] leading-relaxed text-muted"
+  }, /*#__PURE__*/React.createElement("p", null, "RepoLore reads a repository one file at a time and writes an", " ", /*#__PURE__*/React.createElement("span", {
+    className: "text-ink"
+  }, "Open Knowledge Format"), " bundle — a folder of cross-linked markdown concepts that people and AI agents can read without any special tooling. One source file becomes one concept; the whole bundle becomes the graph you see above."), /*#__PURE__*/React.createElement("p", null, "The structure is never guessed. Every edge in the graph comes from a real import in your code, resolved by real parsers — the model only writes the prose. That is what makes the graph trustworthy enough to traverse, question, and hand to agents."))));
+}
+function Features() {
+  const features = [{
+    t: "Real edges, never invented",
+    d: "Links are resolved from actual imports. The model writes explanations; it is never allowed to make up a connection."
+  }, {
+    t: "Portable OKF bundles",
+    d: "One typed markdown concept per file, following Google Cloud's open OKF v0.1 spec. Download the zip and use it with any OKF consumer."
+  }, {
+    t: "Ask by traversal, not RAG",
+    d: "The chat agent walks the graph's links to assemble connected context — and the path it walked lights up so you can see the reasoning."
+  }, {
+    t: "Python, JavaScript, TypeScript",
+    d: "Python via the standard library's parser, JS/TS via tree-sitter. Each new language is one self-contained resolver."
+  }, {
+    t: "Your model, your key",
+    d: "The first graph is free. After that, bring an OpenAI, Anthropic, or Gemini key — it stays in your browser and is never stored on the server."
+  }, {
+    t: "Built for agents",
+    d: "An MCP server exposes every bundle to Claude Code and other agents: list, read, traverse, and find paths between concepts."
+  }];
+  return /*#__PURE__*/React.createElement(Reveal, {
+    as: "section",
+    className: "mx-auto max-w-content px-5 sm:px-8 pb-24"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-mono text-[12px] uppercase tracking-[0.22em] text-faint"
+  }, "Features"), /*#__PURE__*/React.createElement("div", {
+    className: "mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+  }, features.map(f => /*#__PURE__*/React.createElement("div", {
+    key: f.t,
+    className: "rounded-2xl border border-white/[0.07] bg-panel p-6 transition-colors hover:border-white/[0.14]"
+  }, /*#__PURE__*/React.createElement("h3", {
+    className: "text-[15px] font-medium text-ink"
+  }, f.t), /*#__PURE__*/React.createElement("p", {
+    className: "mt-2 text-[13.5px] leading-relaxed text-muted"
+  }, f.d)))));
+}
+
 /* ---------------------------- How it works ----------------------------- */
 
 function HowItWorks() {
@@ -1443,7 +1498,7 @@ function App() {
     llm: llm,
     onNeedKey: openSettings,
     errorMsg: errorMsg
-  }), /*#__PURE__*/React.createElement(HowItWorks, null)), /*#__PURE__*/React.createElement(Footer, null), /*#__PURE__*/React.createElement(ModelSettings, {
+  }), /*#__PURE__*/React.createElement(WhatIsIt, null), /*#__PURE__*/React.createElement(Features, null), /*#__PURE__*/React.createElement(HowItWorks, null)), /*#__PURE__*/React.createElement(Footer, null), /*#__PURE__*/React.createElement(ModelSettings, {
     open: settings.open,
     notice: settings.notice,
     providers: providers,

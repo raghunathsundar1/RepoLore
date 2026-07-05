@@ -947,6 +947,79 @@ function GraphStage({ phase, scan, graph, degree, jobId, pathIds, selectedId, se
   );
 }
 
+/* ------------------------- What it is + features ------------------------ */
+
+function WhatIsIt() {
+  return (
+    <Reveal as="section" className="mx-auto max-w-content px-5 sm:px-8 pb-20">
+      <div className="grid gap-8 lg:grid-cols-[1fr_1.4fr] lg:gap-16">
+        <div>
+          <p className="font-mono text-[12px] uppercase tracking-[0.22em] text-faint">What it is</p>
+          <h2 className="mt-3 text-[26px] sm:text-[30px] font-medium tracking-tight leading-tight text-ink">
+            A knowledge layer for your code.
+          </h2>
+        </div>
+        <div className="space-y-4 text-[15px] leading-relaxed text-muted">
+          <p>
+            RepoLore reads a repository one file at a time and writes an{" "}
+            <span className="text-ink">Open Knowledge Format</span> bundle — a folder of
+            cross-linked markdown concepts that people and AI agents can read without any
+            special tooling. One source file becomes one concept; the whole bundle becomes
+            the graph you see above.
+          </p>
+          <p>
+            The structure is never guessed. Every edge in the graph comes from a real import
+            in your code, resolved by real parsers — the model only writes the prose. That is
+            what makes the graph trustworthy enough to traverse, question, and hand to agents.
+          </p>
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+function Features() {
+  const features = [
+    {
+      t: "Real edges, never invented",
+      d: "Links are resolved from actual imports. The model writes explanations; it is never allowed to make up a connection.",
+    },
+    {
+      t: "Portable OKF bundles",
+      d: "One typed markdown concept per file, following Google Cloud's open OKF v0.1 spec. Download the zip and use it with any OKF consumer.",
+    },
+    {
+      t: "Ask by traversal, not RAG",
+      d: "The chat agent walks the graph's links to assemble connected context — and the path it walked lights up so you can see the reasoning.",
+    },
+    {
+      t: "Python, JavaScript, TypeScript",
+      d: "Python via the standard library's parser, JS/TS via tree-sitter. Each new language is one self-contained resolver.",
+    },
+    {
+      t: "Your model, your key",
+      d: "The first graph is free. After that, bring an OpenAI, Anthropic, or Gemini key — it stays in your browser and is never stored on the server.",
+    },
+    {
+      t: "Built for agents",
+      d: "An MCP server exposes every bundle to Claude Code and other agents: list, read, traverse, and find paths between concepts.",
+    },
+  ];
+  return (
+    <Reveal as="section" className="mx-auto max-w-content px-5 sm:px-8 pb-24">
+      <p className="font-mono text-[12px] uppercase tracking-[0.22em] text-faint">Features</p>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {features.map((f) => (
+          <div key={f.t} className="rounded-2xl border border-white/[0.07] bg-panel p-6 transition-colors hover:border-white/[0.14]">
+            <h3 className="text-[15px] font-medium text-ink">{f.t}</h3>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{f.d}</p>
+          </div>
+        ))}
+      </div>
+    </Reveal>
+  );
+}
+
 /* ---------------------------- How it works ----------------------------- */
 
 function HowItWorks() {
@@ -1177,6 +1250,8 @@ function App() {
           onNeedKey={openSettings}
           errorMsg={errorMsg}
         />
+        <WhatIsIt />
+        <Features />
         <HowItWorks />
       </main>
       <Footer />
