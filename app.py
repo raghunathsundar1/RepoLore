@@ -21,10 +21,11 @@ from typing import List, Optional
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from graph import build_graph
-from okf_producer import build_bundle
+from llm import DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDERS, make_chat_model, validate_model_config
+from okf_producer import build_bundle, draft_concept, make_draft_fn
 from okf_scanner import Concept, scan_repo
 
 logger = logging.getLogger("repolore")
@@ -37,6 +38,12 @@ TINY_THRESHOLD = int(os.environ.get("REPOLORE_TINY_THRESHOLD", "5"))
 CLONE_TIMEOUT_SECONDS = int(os.environ.get("REPOLORE_CLONE_TIMEOUT", "60"))
 MAX_QUESTION_CHARS = int(os.environ.get("REPOLORE_MAX_QUESTION_CHARS", "2000"))
 JOB_RETENTION_DAYS = int(os.environ.get("REPOLORE_JOB_RETENTION_DAYS", "7"))
+
+# Free tier (runs on the SERVER's key): every user gets this much, tracked per IP in
+# SQLite. Beyond it they must bring their own API key (BYOK) — see /models and the
+# `llm` field on /generate and /ask. BYOK keys are used per-request and NEVER stored.
+FREE_GENERATIONS = int(os.environ.get("REPOLORE_FREE_GENERATIONS", "1"))
+FREE_ASKS = int(os.environ.get("REPOLORE_FREE_ASKS", "5"))
 
 # Simple in-process per-IP rate limits — each request drives LLM calls, so this
 # protects against an endpoint being hammered. /generate is stricter (a full
@@ -92,6 +99,39 @@ def _init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS usage (
+                ip TEXT PRIMARY KEY,
+                generations_used INTEGER NOT NULL DEFAULT 0,
+                asks_used INTEGER NOT NULL DEFAULT 0,
+                first_seen TEXT NOT NULL
+            )
+            """
+        )
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _usage_row(ip: str) -> dict:
+    with _db() as conn:
+        row = conn.execute("SELECT * FROM usage WHERE ip = ?", (ip,)).fetchone()
+    if row is None:
+        return {"generations_used": 0, "asks_used": 0}
+    return {"generations_used": row["generations_used"], "asks_used": row["asks_used"]}
+
+
+def _bump_usage(ip: str, column: str) -> None:
+    assert column in ("generations_used", "asks_used")
+    now = datetime.now(timezone.utc).isoformat()
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO usage (ip, first_seen) VALUES (?, ?) ON CONFLICT(ip) DO NOTHING",
+            (ip, now),
+        )
+        conn.execute(f"UPDATE usage SET {column} = {column} + 1 WHERE ip = ?", (ip,))
 
 
 _init_db()
@@ -153,13 +193,37 @@ def healthz():
     return {"status": "ok"}
 
 
+class LLMConfig(BaseModel):
+    """User-supplied model choice + key (BYOK). The key is used for this request
+    only — never persisted, never logged."""
+    model_config = ConfigDict(protected_namespaces=())  # allow a field named `model`
+
+    provider: str
+    model: str
+    api_key: str
+
+
 class GenerateRequest(BaseModel):
     url: str
+    llm: Optional[LLMConfig] = None
 
 
 class AskRequest(BaseModel):
     question: str
     bundle_id: str
+    llm: Optional[LLMConfig] = None
+
+
+def _resolve_byok(llm: Optional[LLMConfig]):
+    """Validate a BYOK config and build its chat model, or None for free tier."""
+    if llm is None:
+        return None
+    error = validate_model_config(llm.provider, llm.model)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    if not llm.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key is empty. Paste your provider API key.")
+    return make_chat_model(llm.provider, llm.model, llm.api_key.strip())
 
 
 def _validate_github_url(url: str) -> None:
@@ -242,7 +306,7 @@ def _zip_bundle(bundle_dir: str, zip_path: str) -> None:
                 zf.write(full, os.path.relpath(full, bundle_dir))
 
 
-def _run_job(job_id: str, tmp_dir: str, concepts: List[Concept]) -> None:
+def _run_job(job_id: str, tmp_dir: str, concepts: List[Concept], draft_fn=draft_concept) -> None:
     try:
         bundle_dir = os.path.join(JOBS_DIR, job_id, "bundle")
         zip_path = os.path.join(JOBS_DIR, job_id, "bundle.zip")
@@ -250,7 +314,7 @@ def _run_job(job_id: str, tmp_dir: str, concepts: List[Concept]) -> None:
         def on_progress(done: int, total: int) -> None:
             _update_progress(job_id, done, total)
 
-        build_bundle(tmp_dir, bundle_dir, concepts=concepts, on_progress=on_progress)
+        build_bundle(tmp_dir, bundle_dir, concepts=concepts, draft_fn=draft_fn, on_progress=on_progress)
         _zip_bundle(bundle_dir, zip_path)
         _finish_job(job_id, zip_path, json.dumps(build_graph(concepts)))
         logger.info("job %s finished: %d concept(s)", job_id, len(concepts))
@@ -261,10 +325,49 @@ def _run_job(job_id: str, tmp_dir: str, concepts: List[Concept]) -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+@app.get("/models")
+def models():
+    """Providers + curated model suggestions for the BYOK settings UI."""
+    return {
+        "providers": [
+            {"id": pid, "label": spec["label"], "models": spec["models"]}
+            for pid, spec in PROVIDERS.items()
+        ],
+        "default": {"provider": DEFAULT_PROVIDER, "model": DEFAULT_MODEL},
+        "free_generations": FREE_GENERATIONS,
+        "free_asks": FREE_ASKS,
+    }
+
+
+@app.get("/usage")
+def usage(request: Request):
+    """How much of the free tier this user (by IP) has left."""
+    row = _usage_row(_client_ip(request))
+    return {
+        "free_generations_left": max(0, FREE_GENERATIONS - row["generations_used"]),
+        "free_asks_left": max(0, FREE_ASKS - row["asks_used"]),
+    }
+
+
 @app.post("/generate")
 def generate(req: GenerateRequest, background_tasks: BackgroundTasks, request: Request):
     _check_rate_limit(request)
     _validate_github_url(req.url)
+
+    # BYOK: validate + build the user's model up front (cheap, no network call).
+    # Free tier: gate BEFORE the expensive clone.
+    byok_model = _resolve_byok(req.llm)
+    ip = _client_ip(request)
+    if byok_model is None and _usage_row(ip)["generations_used"] >= FREE_GENERATIONS:
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                "Your free generation is used. Add your own API key (Model settings) "
+                "to keep generating — OpenAI, Anthropic, and Google Gemini are supported."
+            ),
+        )
+    draft_fn = make_draft_fn(byok_model) if byok_model is not None else draft_concept
+
     tmp_dir = _clone_shallow(req.url)
 
     try:
@@ -290,8 +393,12 @@ def generate(req: GenerateRequest, background_tasks: BackgroundTasks, request: R
     job_id = str(uuid.uuid4())
     _create_job(job_id, total=len(concepts))
 
+    # All checks passed and the job is real — a free-tier run is consumed now.
+    if byok_model is None:
+        _bump_usage(ip, "generations_used")
+
     if len(concepts) <= TINY_THRESHOLD:
-        _run_job(job_id, tmp_dir, concepts)
+        _run_job(job_id, tmp_dir, concepts, draft_fn=draft_fn)
         job = _get_job(job_id)
         if job["status"] == "error":
             raise HTTPException(status_code=500, detail=job["error"])
@@ -303,7 +410,7 @@ def generate(req: GenerateRequest, background_tasks: BackgroundTasks, request: R
             "download_url": f"/jobs/{job_id}/download",
         }
 
-    background_tasks.add_task(_run_job, job_id, tmp_dir, concepts)
+    background_tasks.add_task(_run_job, job_id, tmp_dir, concepts, draft_fn)
     return {"job_id": job_id, "status": "pending", "total": len(concepts)}
 
 
@@ -379,13 +486,30 @@ def ask(req: AskRequest, request: Request):
     if not os.path.isdir(bundle_dir):
         raise HTTPException(status_code=404, detail="Bundle files are missing.")
 
+    # BYOK uses the user's model; otherwise consume a free question (server key).
+    byok_model = _resolve_byok(req.llm)
+    ip = _client_ip(request)
+    if byok_model is None:
+        if _usage_row(ip)["asks_used"] >= FREE_ASKS:
+            raise HTTPException(
+                status_code=402,
+                detail=(
+                    f"Your {FREE_ASKS} free questions are used. Add your own API key "
+                    "(Model settings) to keep asking."
+                ),
+            )
+        _bump_usage(ip, "asks_used")
+    model_factory = (lambda: byok_model) if byok_model is not None else None
+
     graph = json.loads(job["graph_json"])
 
     # Import here so the rest of the API works without the consumer's deps loaded.
     from okf_consumer import answer_from_bundle
 
     try:
-        result = answer_from_bundle(question, bundle_dir, graph["nodes"], graph["edges"])
+        result = answer_from_bundle(
+            question, bundle_dir, graph["nodes"], graph["edges"], model_factory=model_factory
+        )
     except Exception as exc:
         logger.exception("ask failed for bundle %s", req.bundle_id)
         raise HTTPException(status_code=500, detail=f"Failed to answer: {exc}")

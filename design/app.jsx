@@ -67,18 +67,120 @@ function Wordmark({ className = "" }) {
 
 /* ------------------------------- Top bar ------------------------------- */
 
-function TopBar() {
+function TopBar({ onOpenSettings }) {
   return (
     <header className="fixed top-0 inset-x-0 z-30 backdrop-blur-md bg-base/60 border-b border-white/[0.06]">
       <div className="mx-auto max-w-content px-5 sm:px-8 h-14 flex items-center justify-between">
         <a href="#top" className="text-[15px]"><Wordmark /></a>
         <nav className="flex items-center gap-6 text-[13px] text-muted">
           <a href="#how" className="hover:text-ink transition-colors">How it works</a>
-          <a href="#" className="hover:text-ink transition-colors">Docs</a>
+          <button onClick={onOpenSettings} className="hover:text-ink transition-colors">Model</button>
           <a href="#" className="hover:text-ink transition-colors">GitHub</a>
         </nav>
       </div>
     </header>
+  );
+}
+
+/* --------------------------- Model settings (BYOK) --------------------------- */
+
+function loadStoredLLM() {
+  try {
+    const raw = localStorage.getItem("repolore_llm");
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    if (v && v.provider && v.model && v.api_key) return v;
+  } catch (e) { /* corrupted storage — treat as unset */ }
+  return null;
+}
+
+function ModelSettings({ open, notice, providers, llm, onSave, onClear, onClose }) {
+  const [provider, setProvider] = useState("openai");
+  const [model, setModel] = useState("");
+  const [apiKey, setApiKey] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setProvider(llm ? llm.provider : "openai");
+    setModel(llm ? llm.model : "");
+    setApiKey(llm ? llm.api_key : "");
+  }, [open]);
+
+  if (!open) return null;
+  const spec = providers.find((p) => p.id === provider);
+  const modelOptions = spec ? spec.models : [];
+  const effectiveModel = modelOptions.includes(model) ? model : (modelOptions[0] || "");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-2xl border border-white/[0.1] bg-panel p-5 shadow-2xl"
+        role="dialog" aria-modal="true" aria-label="Model settings"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-[15px] font-medium text-ink">Model settings</div>
+            <div className="mt-0.5 text-[12px] text-muted">Bring your own key to generate and ask beyond the free tier.</div>
+          </div>
+          <button onClick={onClose} aria-label="Close settings" className="rounded-md p-1 text-muted hover:bg-white/[0.05] hover:text-ink">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </button>
+        </div>
+
+        {notice && (
+          <div className="mt-3 rounded-lg border border-accent/30 bg-accent/[0.08] px-3 py-2 text-[13px] text-ink">{notice}</div>
+        )}
+
+        <label className="mt-4 block text-[12px] font-medium text-muted">Provider</label>
+        <select
+          value={provider}
+          onChange={(e) => { setProvider(e.target.value); setModel(""); }}
+          className="mt-1 w-full rounded-lg border border-white/[0.1] bg-base px-3 py-2 text-[14px] text-ink outline-none focus:border-accent"
+        >
+          {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+
+        <label className="mt-3 block text-[12px] font-medium text-muted">Model</label>
+        <select
+          value={effectiveModel}
+          onChange={(e) => setModel(e.target.value)}
+          className="mt-1 w-full rounded-lg border border-white/[0.1] bg-base px-3 py-2 font-mono text-[13px] text-ink outline-none focus:border-accent"
+        >
+          {modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+
+        <label className="mt-3 block text-[12px] font-medium text-muted">API key</label>
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder={provider === "openai" ? "sk-…" : provider === "anthropic" ? "sk-ant-…" : "AIza…"}
+          autoComplete="off"
+          className="mt-1 w-full rounded-lg border border-white/[0.1] bg-base px-3 py-2 font-mono text-[13px] text-ink outline-none placeholder:text-faint focus:border-accent"
+        />
+        <p className="mt-2 text-[11px] leading-relaxed text-faint">
+          Your key stays in this browser (localStorage) and is sent only with your requests.
+          The server never stores or logs it.
+        </p>
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <button
+            onClick={() => { onClear(); onClose(); }}
+            className="text-[13px] text-muted underline-offset-2 hover:text-ink hover:underline"
+          >
+            Use free tier
+          </button>
+          <button
+            onClick={() => { onSave({ provider, model: effectiveModel, api_key: apiKey.trim() }); onClose(); }}
+            disabled={!apiKey.trim() || !effectiveModel}
+            className="rounded-xl bg-accent px-5 py-2 text-[14px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -117,7 +219,36 @@ function RepoInput({ value, onChange, onSubmit, busy }) {
 
 /* ------------------------------- Hero ---------------------------------- */
 
-function Hero({ url, setUrl, onGenerate, busy }) {
+function TierLine({ llm, usage, providers, onOpenSettings }) {
+  const label = llm ? ((providers.find((p) => p.id === llm.provider) || {}).label || llm.provider) : "";
+  return (
+    <p className="mt-2 text-center text-[12px] text-faint">
+      {llm ? (
+        <React.Fragment>
+          Using your {label} key · <span className="font-mono">{llm.model}</span>{" "}
+          <button onClick={onOpenSettings} className="text-muted underline underline-offset-2 hover:text-ink">change</button>
+        </React.Fragment>
+      ) : usage && usage.free_generations_left === 0 ? (
+        <React.Fragment>
+          Free run used —{" "}
+          <button onClick={onOpenSettings} className="text-accent underline underline-offset-2 hover:brightness-110">
+            add your API key
+          </button>{" "}
+          to keep generating.
+        </React.Fragment>
+      ) : (
+        <React.Fragment>
+          Your first graph is free — no key needed.{" "}
+          <button onClick={onOpenSettings} className="text-muted underline underline-offset-2 hover:text-ink">
+            Use your own key
+          </button>
+        </React.Fragment>
+      )}
+    </p>
+  );
+}
+
+function Hero({ url, setUrl, onGenerate, busy, tier }) {
   return (
     <section id="top" className="relative overflow-hidden">
       <div
@@ -140,6 +271,7 @@ function Hero({ url, setUrl, onGenerate, busy }) {
         </Reveal>
         <Reveal className="mt-10" style={{ transitionDelay: "80ms" }}>
           <RepoInput value={url} onChange={setUrl} onSubmit={onGenerate} busy={busy} />
+          {tier}
         </Reveal>
       </div>
     </section>
@@ -619,7 +751,7 @@ function ChatMessage({ m, onCite }) {
   );
 }
 
-function ChatPanel({ bundleId, onAsk, onAnswer, onCite, onCollapse }) {
+function ChatPanel({ bundleId, llm, onNeedKey, onAsk, onAnswer, onCite, onCollapse }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -639,13 +771,18 @@ function ChatPanel({ bundleId, onAsk, onAnswer, onCite, onCollapse }) {
     setLoading(true);
     onAsk(); // fade any current highlight while we walk the graph again
     try {
+      const payload = { question: q, bundle_id: bundleId };
+      if (llm) payload.llm = llm;
       const res = await fetch("/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, bundle_id: bundleId }),
+        body: JSON.stringify(payload),
       });
       const body = await res.json();
-      if (!res.ok) {
+      if (res.status === 402) {
+        setMessages((m) => [...m, { role: "assistant", text: body.detail, error: true }]);
+        onNeedKey && onNeedKey(body.detail);
+      } else if (!res.ok) {
         setMessages((m) => [...m, { role: "assistant", text: body.detail || "Something went wrong.", error: true }]);
       } else {
         setMessages((m) => [...m, { role: "assistant", text: body.answer, cited: body.cited_concept_ids || [] }]);
@@ -714,7 +851,7 @@ function ChatPanel({ bundleId, onAsk, onAnswer, onCite, onCollapse }) {
 
 /* Floating chat dock — overlays the graph bottom-right so the whole graph (and
    the traversal highlight) stays visible. Collapses to a launcher pill. */
-function ChatDock({ bundleId, onAsk, onAnswer, onCite }) {
+function ChatDock({ bundleId, llm, onNeedKey, onAsk, onAnswer, onCite }) {
   const [open, setOpen] = useState(true);
 
   if (!open) {
@@ -731,14 +868,14 @@ function ChatDock({ bundleId, onAsk, onAnswer, onCite }) {
 
   return (
     <div className="absolute bottom-4 right-4 z-30 flex h-[460px] max-h-[calc(100%-2rem)] w-[min(92vw,380px)] flex-col overflow-hidden rounded-2xl border border-white/[0.1] bg-panel/95 shadow-2xl backdrop-blur">
-      <ChatPanel bundleId={bundleId} onAsk={onAsk} onAnswer={onAnswer} onCite={onCite} onCollapse={() => setOpen(false)} />
+      <ChatPanel bundleId={bundleId} llm={llm} onNeedKey={onNeedKey} onAsk={onAsk} onAnswer={onAnswer} onCite={onCite} onCollapse={() => setOpen(false)} />
     </div>
   );
 }
 
 /* ---------------------------- Graph stage ------------------------------ */
 
-function GraphStage({ phase, scan, graph, degree, jobId, pathIds, selectedId, setSelectedId, onDownload, onAsk, onAnswer, errorMsg }) {
+function GraphStage({ phase, scan, graph, degree, jobId, pathIds, selectedId, setSelectedId, onDownload, onAsk, onAnswer, llm, onNeedKey, errorMsg }) {
   const nodeCount = graph.nodes.length;
   return (
     <Reveal id="graph" className="mx-auto max-w-content px-5 sm:px-8 pb-24">
@@ -802,7 +939,7 @@ function GraphStage({ phase, scan, graph, degree, jobId, pathIds, selectedId, se
               </span>
             </div>
 
-            <ChatDock bundleId={jobId} onAsk={onAsk} onAnswer={onAnswer} onCite={setSelectedId} />
+            <ChatDock bundleId={jobId} llm={llm} onNeedKey={onNeedKey} onAsk={onAsk} onAnswer={onAnswer} onCite={setSelectedId} />
           </React.Fragment>
         )}
       </div>
@@ -873,6 +1010,31 @@ function App() {
   const [errorMsg, setErrorMsg] = useState("");
   const pollRef = useRef(null);
 
+  // Free tier + BYOK model settings.
+  const [llm, setLlm] = useState(loadStoredLLM);
+  const [providers, setProviders] = useState([]);
+  const [usage, setUsage] = useState(null);
+  const [settings, setSettings] = useState({ open: false, notice: "" });
+
+  const refreshUsage = useCallback(() => {
+    fetch("/usage").then((r) => r.json()).then(setUsage).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/models").then((r) => r.json()).then((d) => setProviders(d.providers || [])).catch(() => {});
+    refreshUsage();
+  }, [refreshUsage]);
+
+  const saveLlm = (config) => {
+    setLlm(config);
+    try { localStorage.setItem("repolore_llm", JSON.stringify(config)); } catch (e) {}
+  };
+  const clearLlm = () => {
+    setLlm(null);
+    try { localStorage.removeItem("repolore_llm"); } catch (e) {}
+  };
+  const openSettings = (notice) => setSettings({ open: true, notice: typeof notice === "string" ? notice : "" });
+
   const applyGraph = useCallback((g) => {
     const nodes = g.nodes || [];
     const rawEdges = g.edges || g.links || [];
@@ -938,17 +1100,27 @@ function App() {
     setScan({ done: 0, total: 0 });
     scrollToGraph();
     try {
+      const payload = { url: url.trim() };
+      if (llm) payload.llm = llm;
       const res = await fetch("/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify(payload),
       });
       const body = await res.json();
+      if (res.status === 402) {
+        setErrorMsg(body.detail);
+        setPhase("error");
+        openSettings(body.detail);
+        refreshUsage();
+        return;
+      }
       if (!res.ok) {
         setErrorMsg(body.detail || "Something went wrong.");
         setPhase("error");
         return;
       }
+      refreshUsage();
       setJobId(body.job_id);
       setScan({ done: 0, total: body.total || 0 });
       if (body.status === "done") {
@@ -961,7 +1133,7 @@ function App() {
       setErrorMsg("Network error: " + err.message + ". Is the RepoLore server running?");
       setPhase("error");
     }
-  }, [phase, url, applyGraph, poll]);
+  }, [phase, url, llm, applyGraph, poll, refreshUsage]);
 
   useEffect(() => () => clearInterval(pollRef.current), []);
 
@@ -980,9 +1152,15 @@ function App() {
 
   return (
     <div>
-      <TopBar />
+      <TopBar onOpenSettings={openSettings} />
       <main>
-        <Hero url={url} setUrl={setUrl} onGenerate={startGenerate} busy={phase === "scanning"} />
+        <Hero
+          url={url}
+          setUrl={setUrl}
+          onGenerate={startGenerate}
+          busy={phase === "scanning"}
+          tier={<TierLine llm={llm} usage={usage} providers={providers} onOpenSettings={openSettings} />}
+        />
         <GraphStage
           phase={phase}
           scan={scan}
@@ -995,11 +1173,22 @@ function App() {
           onDownload={onDownload}
           onAsk={() => setPathIds([])}
           onAnswer={(body) => setPathIds(body.visited_concept_ids || [])}
+          llm={llm}
+          onNeedKey={openSettings}
           errorMsg={errorMsg}
         />
         <HowItWorks />
       </main>
       <Footer />
+      <ModelSettings
+        open={settings.open}
+        notice={settings.notice}
+        providers={providers}
+        llm={llm}
+        onSave={saveLlm}
+        onClear={clearLlm}
+        onClose={() => setSettings({ open: false, notice: "" })}
+      />
     </div>
   );
 }

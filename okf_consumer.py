@@ -26,9 +26,9 @@ MAX_CONCEPTS = 12     # hard cap on assembled concepts
 
 
 def _default_model():
-    from langchain_openai import ChatOpenAI
+    from llm import make_chat_model
 
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0, timeout=60, max_retries=2)
+    return make_chat_model()
 
 
 def plan_concepts(question: str, catalog: List[Dict], model_factory: Callable = _default_model) -> List[str]:
@@ -155,11 +155,18 @@ def answer_from_bundle(
     edges: List[dict],
     plan_fn: Optional[Callable] = None,
     answer_fn: Optional[Callable] = None,
+    model_factory: Optional[Callable] = None,
 ) -> Dict:
     """Run the consumer agent over an existing bundle. Returns the API payload.
 
     plan_fn/answer_fn default to the module-level LLM steps, resolved at call time
-    so they can be monkeypatched in tests."""
+    so they can be monkeypatched in tests. model_factory (e.g. a user's BYOK model)
+    is threaded into those defaults when given."""
+    if model_factory is not None:
+        if plan_fn is None:
+            plan_fn = lambda q, catalog: plan_concepts(q, catalog, model_factory=model_factory)
+        if answer_fn is None:
+            answer_fn = lambda q, texts: answer_question(q, texts, model_factory=model_factory)
     agent = build_agent(
         plan_fn=plan_fn or plan_concepts,
         answer_fn=answer_fn or answer_question,

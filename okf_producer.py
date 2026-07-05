@@ -44,11 +44,19 @@ def strip_code_fences(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def draft_concept(concept: Concept, source: str) -> str:
-    """Call the LLM to draft prose explaining a single concept file."""
-    from langchain_openai import ChatOpenAI
+def make_draft_fn(chat_model) -> Callable[["Concept", str], str]:
+    """Bind draft_concept to a specific chat model (e.g. a user's BYOK model)."""
+    return lambda concept, source: draft_concept(concept, source, chat_model=chat_model)
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, timeout=60, max_retries=2)
+
+def draft_concept(concept: Concept, source: str, chat_model=None) -> str:
+    """Call the LLM to draft prose explaining a single concept file. This is the
+    only function in the producer that talks to a model."""
+    if chat_model is None:
+        from llm import make_chat_model
+
+        chat_model = make_chat_model()
+    llm = chat_model
     prompt = (
         "You are documenting a codebase one file at a time for a knowledge base.\n"
         f"File path: {concept.path}\n"

@@ -3,6 +3,8 @@ fastapi==0.139.0
 uvicorn==0.50.0
 langchain==1.3.11
 langchain-openai==1.3.3
+langchain-anthropic==1.4.8
+langchain-google-genai==4.2.6
 langgraph==1.2.7
 
 # Multi-language scanning (Python uses the stdlib `ast`; these add JS/TS)

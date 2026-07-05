@@ -146,6 +146,65 @@ def test_ask_rejects_oversized_question(client, monkeypatch):
     assert client.post("/ask", json={"question": big, "bundle_id": job_id}).status_code == 413
 
 
+BYOK = {"provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-user-own-key"}
+
+
+def test_free_generation_then_402_then_byok_works(client, monkeypatch):
+    monkeypatch.setattr(app_module, "_clone_shallow", _fake_clone_factory(SAMPLE))
+    monkeypatch.setattr(app_module, "build_bundle", _fake_build_bundle)
+
+    # 1st generation: free (server key).
+    assert client.post("/generate", json={"url": "https://github.com/owner/repo"}).status_code == 200
+    assert client.get("/usage").json()["free_generations_left"] == 0
+
+    # 2nd without a key: payment required.
+    res = client.post("/generate", json={"url": "https://github.com/owner/repo"})
+    assert res.status_code == 402
+    assert "API key" in res.json()["detail"]
+
+    # 2nd WITH the user's own key: allowed.
+    res = client.post("/generate", json={"url": "https://github.com/owner/repo", "llm": BYOK})
+    assert res.status_code == 200
+
+
+def test_generate_rejects_bad_byok_config(client, monkeypatch):
+    monkeypatch.setattr(app_module, "_clone_shallow", _fake_clone_factory(SAMPLE))
+    bad_provider = {**BYOK, "provider": "nope"}
+    assert client.post("/generate", json={"url": "https://github.com/o/r", "llm": bad_provider}).status_code == 400
+    empty_key = {**BYOK, "api_key": "   "}
+    assert client.post("/generate", json={"url": "https://github.com/o/r", "llm": empty_key}).status_code == 400
+
+
+def test_free_asks_capped_then_byok_works(client, monkeypatch):
+    job_id = _make_done_bundle(client, monkeypatch)
+
+    import okf_consumer
+
+    monkeypatch.setattr(okf_consumer, "plan_concepts", lambda q, c, **kw: ["pkg/routes"])
+    monkeypatch.setattr(okf_consumer, "answer_question", lambda q, t, **kw: {"answer": "ok", "cited_ids": []})
+    monkeypatch.setattr(app_module, "FREE_ASKS", 2)
+
+    assert client.post("/ask", json={"question": "q1", "bundle_id": job_id}).status_code == 200
+    assert client.post("/ask", json={"question": "q2", "bundle_id": job_id}).status_code == 200
+    res = client.post("/ask", json={"question": "q3", "bundle_id": job_id})
+    assert res.status_code == 402
+
+    # With their own key the ask goes through (BYOK model is stubbed at the plan/answer level).
+    res = client.post("/ask", json={"question": "q3", "bundle_id": job_id, "llm": BYOK})
+    assert res.status_code == 200
+
+
+def test_models_and_usage_endpoints(client):
+    body = client.get("/models").json()
+    provider_ids = {p["id"] for p in body["providers"]}
+    assert provider_ids == {"openai", "anthropic", "google"}
+    assert all(p["models"] for p in body["providers"])
+    assert body["default"]["provider"] == "openai"
+
+    u = client.get("/usage").json()
+    assert u["free_generations_left"] >= 0 and u["free_asks_left"] >= 0
+
+
 def test_healthz_ok_and_security_headers(client):
     res = client.get("/healthz")
     assert res.status_code == 200

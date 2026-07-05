@@ -37,6 +37,10 @@ retrieval. That visible path is the whole point.
   cites the concepts it used and highlights the visited path in the graph.
 - **Production-minded web app.** Background jobs with live progress, per-IP rate
   limits, graceful failure on private/invalid/empty/non-Python repos.
+- **Free tier + bring your own key.** Every user gets one free generation and a few
+  free questions on the server's key. Beyond that they add their own API key and pick
+  a model — OpenAI, Anthropic, or Google Gemini. Keys are sent per-request and are
+  never stored or logged server-side (the browser keeps them in localStorage only).
 
 ## Quickstart
 
@@ -73,6 +77,14 @@ python graph.py <repo>                       # print {nodes, edges} graph JSON
 | `GET` | `/jobs/{id}/concept?id=<cid>` | A single concept's generated markdown. |
 | `GET` | `/jobs/{id}/download` | The OKF bundle as a zip. |
 | `POST` | `/ask` | `{ question, bundle_id }` → `{ answer, visited_concept_ids, cited_concept_ids }`. |
+| `GET` | `/models` | Providers + curated model list for the BYOK settings UI. |
+| `GET` | `/usage` | Free-tier remaining for the caller (per IP). |
+
+`POST /generate` and `POST /ask` accept an optional `llm` field —
+`{ "provider": "openai" \| "anthropic" \| "google", "model": "...", "api_key": "..." }` —
+to run on the user's own key. Without it, requests draw from the free tier and return
+**402** once it's exhausted (`REPOLORE_FREE_GENERATIONS`, default 1;
+`REPOLORE_FREE_ASKS`, default 5).
 
 ## Use it as an MCP server
 
