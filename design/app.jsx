@@ -7,6 +7,37 @@ const ACCENT = "#6d5efc";
 
 /* --------------------------- Small primitives --------------------------- */
 
+/* A render error anywhere below must not blank the whole page. */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="mx-auto max-w-xl px-6 py-24 text-center">
+          <div className="font-mono text-[12px] uppercase tracking-wider text-[#ff9a9a]">Something broke</div>
+          <p className="mt-3 text-[14px] leading-relaxed text-muted">
+            The interface hit an unexpected error. Reload the page to continue — your
+            generated bundles are safe on the server.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-5 rounded-xl bg-accent px-5 py-2.5 text-[14px] font-medium text-white hover:brightness-110"
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function Reveal({ as: Tag = "div", className = "", children, ...rest }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -121,7 +152,7 @@ function ScanningState({ done, total }) {
   const pct = total ? Math.round((done / total) * 100) : 0;
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center px-6">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md" role="status" aria-live="polite">
         <div className="flex items-baseline justify-between font-mono text-[12px] text-muted">
           <span className="text-ink">{total ? "Drafting concepts" : "Cloning & scanning repository"}</span>
           <span>{total ? done + " / " + total : "…"}</span>
@@ -438,7 +469,7 @@ function ForceGraph({ data, degree, pathIds, selectedId, onSelect }) {
   }, [data, degree, onSelect]);
 
   return (
-    <div ref={wrapRef} className="absolute inset-0">
+    <div ref={wrapRef} className="absolute inset-0" role="img" aria-label="Interactive knowledge graph of the codebase. Concepts are nodes; imports are edges.">
       <canvas ref={canvasRef} className="block h-full w-full" />
     </div>
   );
@@ -647,7 +678,7 @@ function ChatPanel({ bundleId, onAsk, onAnswer, onCite, onCollapse }) {
         )}
       </div>
 
-      <div ref={listRef} className="panel-scroll flex-1 space-y-4 overflow-y-auto px-4 py-4">
+      <div ref={listRef} role="log" aria-live="polite" aria-label="Chat messages" className="panel-scroll flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
           <div className="text-[13px] leading-relaxed text-faint">
             Ask something that spans two files — e.g.{" "}
@@ -665,6 +696,7 @@ function ChatPanel({ bundleId, onAsk, onAnswer, onCite, onCollapse }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about this codebase…"
+            aria-label="Ask a question about this codebase"
             className="flex-1 bg-transparent py-1.5 text-[14px] text-ink outline-none placeholder:text-faint"
           />
           <button
@@ -858,10 +890,21 @@ function App() {
 
   const poll = useCallback((id) => {
     clearInterval(pollRef.current);
+    const startedAt = Date.now();
+    const MAX_POLL_MS = 30 * 60 * 1000; // a stuck job (e.g. server restarted mid-run) must not poll forever
+    let consecutiveFailures = 0;
+
     pollRef.current = setInterval(async () => {
+      if (Date.now() - startedAt > MAX_POLL_MS) {
+        clearInterval(pollRef.current);
+        setErrorMsg("Generation is taking too long — the job may be stuck. Try again.");
+        setPhase("error");
+        return;
+      }
       try {
         const r = await fetch("/jobs/" + id);
         const j = await r.json();
+        consecutiveFailures = 0; // a transient network blip should not kill the run
         if (j.status === "error") {
           clearInterval(pollRef.current);
           setErrorMsg(j.error || "Generation failed.");
@@ -876,9 +919,12 @@ function App() {
           setPhase("ready");
         }
       } catch (err) {
-        clearInterval(pollRef.current);
-        setErrorMsg("Network error: " + err.message);
-        setPhase("error");
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 3) {
+          clearInterval(pollRef.current);
+          setErrorMsg("Lost contact with the server: " + err.message);
+          setPhase("error");
+        }
       }
     }, 1400);
   }, [applyGraph]);
@@ -919,6 +965,15 @@ function App() {
 
   useEffect(() => () => clearInterval(pollRef.current), []);
 
+  // Escape closes the concept drawer (keyboard parity with the close button).
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") setSelectedId(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const onDownload = () => { if (jobId) window.location.href = "/jobs/" + jobId + "/download"; };
 
   if (window.__bootTimer) clearTimeout(window.__bootTimer);
@@ -950,4 +1005,8 @@ function App() {
 }
 
 if (window.__bootTimer) clearTimeout(window.__bootTimer);
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);
