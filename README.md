@@ -74,14 +74,40 @@ python graph.py <repo>                       # print {nodes, edges} graph JSON
 | `GET` | `/jobs/{id}/download` | The OKF bundle as a zip. |
 | `POST` | `/ask` | `{ question, bundle_id }` → `{ answer, visited_concept_ids, cited_concept_ids }`. |
 
+## Use it as an MCP server
+
+RepoLore ships an [MCP](https://modelcontextprotocol.io) server so **Claude Code or
+any agent can traverse a codebase's OKF bundle directly** — walking the real link
+graph, no vector store, no API key on the server side. This is the OKF thesis made
+usable: the connected agent does the reasoning, RepoLore serves the graph.
+
+First get a bundle (download one from the web app and unzip it, or `python
+okf_producer.py <repo> ./bundle`), then point the server at it:
+
+```bash
+claude mcp add repolore -e REPOLORE_BUNDLE=/abs/path/to/bundle -- python /abs/path/to/mcp_server.py
+```
+
+Tools exposed (all deterministic, no LLM):
+
+| Tool | What it does |
+|---|---|
+| `list_concepts(contains, type)` | List concepts (one per file), optionally filtered. |
+| `read_concept(id)` | Full markdown for one concept. |
+| `concept_links(id)` | Direct neighbors: what it links to / what links to it. |
+| `traverse(start, hops)` | The connected concept set within N hops — OKF's connected-context retrieval. |
+| `find_path(source, target)` | Shortest link-path between two concepts. |
+
 ## Architecture
 
 | File | Role | LLM? |
 |---|---|---|
-| `okf_scanner.py` | Walk repo, resolve imports → VALID LINKS | No |
-| `okf_producer.py` | Draft concept prose + write the bundle | Yes (one isolated call) |
+| `okf_scanner.py` | Walk repo, resolve imports → VALID LINKS (Python + JS/TS) | No |
+| `okf_producer.py` | Draft concept prose + write the OKF bundle | Yes (one isolated call) |
 | `graph.py` | Scanner output → `{ nodes, edges }` JSON | No |
+| `okf_bundle.py` | Read an OKF bundle dir → graph + traversal/path queries | No |
 | `okf_consumer.py` | LangGraph agent: traverse links to answer questions | Yes (two isolated calls) |
+| `mcp_server.py` | MCP server exposing the bundle's graph to any agent | No |
 | `app.py` | FastAPI endpoints, SQLite job store, rate limits | No |
 | `design/` | Dark, Linear-style UI (see below) | — |
 | `sample/` | Tiny throwaway repo used by the tests | — |

@@ -27,16 +27,26 @@ python -m pytest                             # run tests
   is the ONLY function that calls the model; the rest is deterministic + testable.
 - **Graph export** (`graph.py`) — reshapes scanner output into `{nodes, edges}`
   JSON. No LLM. Feeds both the API response and the frontend visualization.
-- **Consumer** (optional/later) — reads a bundle, follows links, answers questions.
-  This is the part that is genuinely an agent (it decides which concepts to visit).
+- **Bundle reader** (`okf_bundle.py`) — deterministic. Reads an OKF bundle dir into
+  `{nodes, edges}` (edges from the concepts' body markdown links) and provides graph
+  ops: adjacency, connected traversal, shortest path, neighbors. No LLM. Shared by
+  the consumer and the MCP server.
+- **Consumer** (`okf_consumer.py`) — a LangGraph agent that reads a bundle, follows
+  links, and answers questions. The part that is genuinely an agent (it decides which
+  concepts to visit). LLM isolated in `plan_concepts()` + `answer_question()`.
+- **MCP server** (`mcp_server.py`) — exposes the bundle's graph (list/read/links/
+  traverse/find_path) over MCP so external agents traverse it. No LLM server-side.
 - **Web layer** (`app.py`) — FastAPI. `POST /generate` (url → bundle zip + graph
   JSON); frontend renders the graph and a download link.
 
 ## Project layout
 - `okf_scanner.py`, `okf_producer.py` — the engine (works on local folders).
 - `graph.py` — scanner output → graph JSON.
+- `okf_bundle.py` — read a bundle dir → graph + traversal queries (shared, no LLM).
+- `okf_consumer.py` — LangGraph traversal agent (answers questions).
+- `mcp_server.py` — MCP server exposing the bundle graph to agents.
 - `app.py` — FastAPI endpoints + repo fetching.
-- `frontend/` — input box, progress, graph view, download button.
+- `design/` — Linear-style UI (input, progress, graph, concept panel, chat dock).
 - `sample/` — tiny throwaway repo for tests. Not real code.
 
 ## Core design rules (do not violate)

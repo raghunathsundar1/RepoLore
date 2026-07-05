@@ -10,78 +10,16 @@ everything else is deterministic, so the agent is testable with stubbed LLM step
 Permissive per the OKF spec: missing files, unknown types, and broken links are
 skipped, never fatal.
 """
-import os
-import re
 from typing import Callable, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+# Deterministic bundle/graph primitives are shared with the MCP server; re-exported
+# here so callers/tests can keep importing them from okf_consumer.
+from okf_bundle import RESERVED, build_adjacency, concept_brief, read_concept, traverse
+
 MAX_HOPS = 2          # bound traversal so context stays small
 MAX_CONCEPTS = 12     # hard cap on assembled concepts
-RESERVED = {"index", "log"}
-
-# ------------------------- deterministic bundle access -------------------------
-
-
-def read_concept(bundle_dir: str, concept_id: str) -> Optional[str]:
-    """Return a concept's markdown, or None if it doesn't exist (broken link)."""
-    if not concept_id or concept_id in RESERVED:
-        return None
-    path = os.path.join(bundle_dir, *concept_id.split("/")) + ".md"
-    if not os.path.isfile(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            return f.read()
-    except OSError:
-        return None
-
-
-def concept_brief(markdown: str, limit: int = 160) -> str:
-    """First prose sentence(s) of a concept, for the planner's catalog."""
-    if not markdown:
-        return ""
-    body = markdown
-    m = re.match(r"^---\n.*?\n---\n?(.*)$", markdown, re.DOTALL)
-    if m:
-        body = m.group(1)
-    body = body.strip()
-    if not body:
-        return ""
-    snippet = body.split("\n\n")[0].replace("\n", " ").strip()
-    return snippet[:limit]
-
-
-def build_adjacency(edges: List[dict]) -> Dict[str, set]:
-    """Undirected adjacency from graph edges, so a link connects both ways."""
-    adj: Dict[str, set] = {}
-    for e in edges or []:
-        s, t = e.get("source"), e.get("target")
-        if not s or not t:
-            continue
-        adj.setdefault(s, set()).add(t)
-        adj.setdefault(t, set()).add(s)
-    return adj
-
-
-def traverse(seeds: List[str], adjacency: Dict[str, set], max_hops: int = MAX_HOPS) -> List[str]:
-    """BFS from the seed concepts over graph links, up to max_hops. Returns the
-    connected set in visit order (seeds first)."""
-    visited: List[str] = []
-    seen: set = set()
-    frontier = [(s, 0) for s in seeds if s]
-    while frontier:
-        node, depth = frontier.pop(0)
-        if node in seen:
-            continue
-        seen.add(node)
-        visited.append(node)
-        if depth >= max_hops:
-            continue
-        for neighbor in sorted(adjacency.get(node, ())):
-            if neighbor not in seen:
-                frontier.append((neighbor, depth + 1))
-    return visited
 
 
 # ------------------------------- LLM steps (isolated) -------------------------------
