@@ -1101,6 +1101,14 @@ function GraphStage({
   errorMsg
 }) {
   const nodeCount = graph.nodes.length;
+  const [copiedMcp, setCopiedMcp] = useState(false);
+  const copyMcp = () => {
+    const cmd = "claude mcp add repolore --transport http " + window.location.origin + "/mcp" + "\n# then ask about bundle_id: " + jobId;
+    navigator.clipboard && navigator.clipboard.writeText(cmd).then(() => {
+      setCopiedMcp(true);
+      setTimeout(() => setCopiedMcp(false), 2000);
+    });
+  };
   return /*#__PURE__*/React.createElement(Reveal, {
     id: "graph",
     className: "mx-auto max-w-content px-5 sm:px-8 pb-24"
@@ -1139,13 +1147,19 @@ function GraphStage({
     selectedId: selectedId,
     onSelect: setSelectedId
   }), /*#__PURE__*/React.createElement("div", {
-    className: "pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3"
+    className: "pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 px-4 py-3"
   }, /*#__PURE__*/React.createElement("span", {
     className: "font-mono text-[12px] text-muted"
-  }, nodeCount, " concepts · ", graph.links.length, " links"), /*#__PURE__*/React.createElement("button", {
+  }, nodeCount, " concepts · ", graph.links.length, " links"), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: copyMcp,
+    title: "Copy the command that connects Claude Code (or any MCP client) to this bundle",
+    className: "pointer-events-auto rounded-lg border border-white/[0.12] bg-panel/70 px-3 py-1.5 font-mono text-[12px] text-muted transition-colors hover:border-white/25 hover:bg-panel hover:text-ink"
+  }, copiedMcp ? "Copied ✓" : "MCP"), /*#__PURE__*/React.createElement("button", {
     onClick: onDownload,
     className: "pointer-events-auto rounded-lg border border-white/[0.12] bg-panel/70 px-3 py-1.5 text-[12px] text-ink transition-colors hover:border-white/25 hover:bg-panel"
-  }, "Download bundle")), /*#__PURE__*/React.createElement(ConceptPanel, {
+  }, "Download bundle"))), /*#__PURE__*/React.createElement(ConceptPanel, {
     jobId: jobId,
     node: selectedId ? graph.nodes.find(n => n.id === selectedId) : null,
     degree: degree,
@@ -1201,7 +1215,7 @@ function Features() {
     d: "The first graph is free. After that, bring an OpenAI, Anthropic, or Gemini key — it stays in your browser and is never stored on the server."
   }, {
     t: "Built for agents",
-    d: "An MCP server exposes every bundle to Claude Code and other agents: list, read, traverse, and find paths between concepts."
+    d: "Every generated bundle is queryable over MCP — one command connects Claude Code, which can then list, read, traverse, and find paths between concepts."
   }];
   return /*#__PURE__*/React.createElement(Reveal, {
     as: "section",

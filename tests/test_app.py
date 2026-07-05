@@ -205,6 +205,46 @@ def test_models_and_usage_endpoints(client):
     assert u["free_generations_left"] >= 0 and u["free_asks_left"] >= 0
 
 
+MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+
+
+def _mcp_call(c, id_, method, params=None):
+    body = {"jsonrpc": "2.0", "id": id_, "method": method}
+    if params is not None:
+        body["params"] = params
+    res = c.post("/mcp/", json=body, headers=MCP_HEADERS)
+    assert res.status_code == 200
+    return res.json()["result"]
+
+
+def test_remote_mcp_traverses_a_generated_bundle(client, monkeypatch):
+    job_id = _make_done_bundle(client, monkeypatch)
+
+    # The /mcp transport needs the app lifespan running -> context-managed client.
+    with TestClient(app_module.app) as mcp_client:
+        _mcp_call(mcp_client, 1, "initialize", {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "test", "version": "0"},
+        })
+        tools = {t["name"] for t in _mcp_call(mcp_client, 2, "tools/list")["tools"]}
+        assert tools == {"list_concepts", "read_concept", "concept_links", "traverse", "find_path"}
+
+        result = _mcp_call(mcp_client, 3, "tools/call", {
+            "name": "traverse", "arguments": {"bundle_id": job_id, "start": "app", "hops": 1},
+        })
+        assert not result.get("isError")
+        import json as _json
+        payload = _json.loads(result["content"][0]["text"]) if result["content"][0]["type"] == "text" else result
+        # traverse from app reaches its direct imports over the real link graph
+        visited = {v["id"] for v in (payload.get("visited") or [])} if isinstance(payload, dict) else set()
+        assert "pkg/utils" in visited or "pkg/routes" in visited
+
+        bad = _mcp_call(mcp_client, 4, "tools/call", {
+            "name": "list_concepts", "arguments": {"bundle_id": "does-not-exist"},
+        })
+        assert bad.get("isError") is True
+
+
 def test_healthz_ok_and_security_headers(client):
     res = client.get("/healthz")
     assert res.status_code == 200

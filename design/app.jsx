@@ -877,6 +877,17 @@ function ChatDock({ bundleId, llm, onNeedKey, onAsk, onAnswer, onCite }) {
 
 function GraphStage({ phase, scan, graph, degree, jobId, pathIds, selectedId, setSelectedId, onDownload, onAsk, onAnswer, llm, onNeedKey, errorMsg }) {
   const nodeCount = graph.nodes.length;
+  const [copiedMcp, setCopiedMcp] = useState(false);
+
+  const copyMcp = () => {
+    const cmd =
+      "claude mcp add repolore --transport http " + window.location.origin + "/mcp" +
+      "\n# then ask about bundle_id: " + jobId;
+    navigator.clipboard && navigator.clipboard.writeText(cmd).then(() => {
+      setCopiedMcp(true);
+      setTimeout(() => setCopiedMcp(false), 2000);
+    });
+  };
   return (
     <Reveal id="graph" className="mx-auto max-w-content px-5 sm:px-8 pb-24">
       <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-elevated grid-dots"
@@ -913,16 +924,25 @@ function GraphStage({ phase, scan, graph, degree, jobId, pathIds, selectedId, se
           <React.Fragment>
             <ForceGraph data={graph} degree={degree} pathIds={pathIds} selectedId={selectedId} onSelect={setSelectedId} />
 
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3">
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 px-4 py-3">
               <span className="font-mono text-[12px] text-muted">
                 {nodeCount} concepts · {graph.links.length} links
               </span>
-              <button
-                onClick={onDownload}
-                className="pointer-events-auto rounded-lg border border-white/[0.12] bg-panel/70 px-3 py-1.5 text-[12px] text-ink transition-colors hover:border-white/25 hover:bg-panel"
-              >
-                Download bundle
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={copyMcp}
+                  title="Copy the command that connects Claude Code (or any MCP client) to this bundle"
+                  className="pointer-events-auto rounded-lg border border-white/[0.12] bg-panel/70 px-3 py-1.5 font-mono text-[12px] text-muted transition-colors hover:border-white/25 hover:bg-panel hover:text-ink"
+                >
+                  {copiedMcp ? "Copied ✓" : "MCP"}
+                </button>
+                <button
+                  onClick={onDownload}
+                  className="pointer-events-auto rounded-lg border border-white/[0.12] bg-panel/70 px-3 py-1.5 text-[12px] text-ink transition-colors hover:border-white/25 hover:bg-panel"
+                >
+                  Download bundle
+                </button>
+              </div>
             </div>
 
             <ConceptPanel
@@ -1002,7 +1022,7 @@ function Features() {
     },
     {
       t: "Built for agents",
-      d: "An MCP server exposes every bundle to Claude Code and other agents: list, read, traverse, and find paths between concepts.",
+      d: "Every generated bundle is queryable over MCP — one command connects Claude Code, which can then list, read, traverse, and find paths between concepts.",
     },
   ];
   return (

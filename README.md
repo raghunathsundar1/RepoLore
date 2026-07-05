@@ -88,13 +88,22 @@ to run on the user's own key. Without it, requests draw from the free tier and r
 
 ## Use it as an MCP server
 
-RepoLore ships an [MCP](https://modelcontextprotocol.io) server so **Claude Code or
-any agent can traverse a codebase's OKF bundle directly** — walking the real link
-graph, no vector store, no API key on the server side. This is the OKF thesis made
-usable: the connected agent does the reasoning, RepoLore serves the graph.
+RepoLore speaks [MCP](https://modelcontextprotocol.io) so **Claude Code or any agent
+can traverse a codebase's OKF bundle directly** — walking the real link graph, no
+vector store, no API key needed for the tools. This is the OKF thesis made usable:
+the connected agent does the reasoning, RepoLore serves the graph.
 
-First get a bundle (download one from the web app and unzip it, or `python
-okf_producer.py <repo> ./bundle`), then point the server at it:
+**Remote (easiest)** — every deployment exposes MCP at `/mcp`. Generate a repo in the
+web app, click the **MCP** button (it copies this command with your bundle id), or run:
+
+```bash
+claude mcp add repolore --transport http https://<your-host>/mcp
+```
+
+Then ask Claude Code to traverse using the `bundle_id` from your generation (it's the
+job id, also visible in the download URL).
+
+**Local (works with any OKF bundle)** — point the stdio server at an unzipped bundle:
 
 ```bash
 claude mcp add repolore -e REPOLORE_BUNDLE=/abs/path/to/bundle -- python /abs/path/to/mcp_server.py
