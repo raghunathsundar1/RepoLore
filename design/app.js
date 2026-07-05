@@ -103,7 +103,9 @@ function TopBar({
     onClick: onOpenSettings,
     className: "hover:text-ink transition-colors"
   }, "Model"), /*#__PURE__*/React.createElement("a", {
-    href: "#",
+    href: "https://github.com/raghunathsundar1/RepoLore",
+    target: "_blank",
+    rel: "noopener noreferrer",
     className: "hover:text-ink transition-colors"
   }, "GitHub"))));
 }
@@ -1213,7 +1215,9 @@ function Footer() {
   }), /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-6 text-[13px] text-muted"
   }, /*#__PURE__*/React.createElement("a", {
-    href: "#",
+    href: "https://github.com/raghunathsundar1/RepoLore",
+    target: "_blank",
+    rel: "noopener noreferrer",
     className: "hover:text-ink transition-colors"
   }, "GitHub"), /*#__PURE__*/React.createElement("span", {
     className: "text-faint"

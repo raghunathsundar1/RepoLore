@@ -75,7 +75,7 @@ function TopBar({ onOpenSettings }) {
         <nav className="flex items-center gap-6 text-[13px] text-muted">
           <a href="#how" className="hover:text-ink transition-colors">How it works</a>
           <button onClick={onOpenSettings} className="hover:text-ink transition-colors">Model</button>
-          <a href="#" className="hover:text-ink transition-colors">GitHub</a>
+          <a href="https://github.com/raghunathsundar1/RepoLore" target="_blank" rel="noopener noreferrer" className="hover:text-ink transition-colors">GitHub</a>
         </nav>
       </div>
     </header>
@@ -981,7 +981,7 @@ function Footer() {
       <div className="mx-auto max-w-content px-5 sm:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
         <Wordmark className="text-[14px]" />
         <div className="flex items-center gap-6 text-[13px] text-muted">
-          <a href="#" className="hover:text-ink transition-colors">GitHub</a>
+          <a href="https://github.com/raghunathsundar1/RepoLore" target="_blank" rel="noopener noreferrer" className="hover:text-ink transition-colors">GitHub</a>
           <span className="text-faint">Built on the Open Knowledge Format.</span>
         </div>
       </div>
