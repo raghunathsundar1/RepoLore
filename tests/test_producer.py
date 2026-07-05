@@ -28,16 +28,37 @@ def test_build_bundle_writes_expected_files(tmp_path):
     assert os.path.exists(os.path.join(out_dir, "pkg", "utils.md"))
 
 
-def test_build_bundle_concept_file_has_frontmatter_and_prose(tmp_path):
+def test_build_bundle_concept_file_is_okf_aligned(tmp_path):
     out_dir = str(tmp_path / "bundle")
     build_bundle(SAMPLE, out_dir, draft_fn=stub_draft)
 
     content = open(os.path.join(out_dir, "pkg", "routes.md"), encoding="utf-8").read()
+    # OKF frontmatter: required type + recommended title/description/resource/tags/timestamp.
     assert content.startswith("---\n")
     assert "type: module" in content
-    assert "id: pkg/routes" in content
-    assert "- pkg" in content
+    assert "title: pkg/routes" in content
+    assert 'description: "Stub prose for pkg/routes."' in content
+    assert "resource: pkg/routes.py" in content
+    assert "timestamp: " in content
+    # Prose, then links as STANDARD MARKDOWN LINKS in the body (not frontmatter).
     assert "Stub prose for pkg/routes." in content
+    assert "## Related concepts" in content
+    assert "[pkg/utils](/pkg/utils.md)" in content
+    assert "\nlinks:" not in content  # links are no longer a frontmatter key
+
+
+def test_index_and_log_follow_okf_structure(tmp_path):
+    out_dir = str(tmp_path / "bundle")
+    build_bundle(SAMPLE, out_dir, draft_fn=stub_draft)
+
+    index = open(os.path.join(out_dir, "index.md"), encoding="utf-8").read()
+    assert not index.startswith("---")  # index.md has no frontmatter
+    assert "* [pkg/routes](/pkg/routes.md) - Stub prose for pkg/routes." in index
+
+    log = open(os.path.join(out_dir, "log.md"), encoding="utf-8").read()
+    assert "**Creation**" in log
+    import re
+    assert re.search(r"## \d{4}-\d{2}-\d{2}", log)  # ISO date heading
 
 
 def test_build_bundle_reports_progress(tmp_path):

@@ -448,25 +448,38 @@ function ForceGraph({ data, degree, pathIds, selectedId, onSelect }) {
 
 function parseConcept(md) {
   const m = md.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (m) return { frontmatter: m[1], body: m[2].trim() };
-  return { frontmatter: "", body: md.trim() };
+  const frontmatter = m ? m[1] : "";
+  let body = (m ? m[2] : md).trim();
+
+  // Split the OKF "## Related concepts" section off the prose, and pull the
+  // concept ids out of its standard markdown links so we can make them clickable.
+  const related = [];
+  const idx = body.search(/^##\s+Related concepts/im);
+  if (idx !== -1) {
+    const section = body.slice(idx);
+    body = body.slice(0, idx).trim();
+    const re = /[-*]\s*\[([^\]]+)\]\([^)]+\)/g;
+    let hit;
+    while ((hit = re.exec(section)) !== null) related.push(hit[1]);
+  }
+  return { frontmatter, body, related };
 }
 
-function ConceptPanel({ jobId, node, degree, onClose }) {
-  const [state, setState] = useState({ loading: false, frontmatter: "", body: "", error: "" });
+function ConceptPanel({ jobId, node, degree, onClose, onCite }) {
+  const [state, setState] = useState({ loading: false, frontmatter: "", body: "", related: [], error: "" });
 
   useEffect(() => {
     if (!node || !jobId) return;
     let cancelled = false;
-    setState({ loading: true, frontmatter: "", body: "", error: "" });
+    setState({ loading: true, frontmatter: "", body: "", related: [], error: "" });
     fetch("/jobs/" + jobId + "/concept?id=" + encodeURIComponent(node.id))
       .then((r) => (r.ok ? r.json() : r.json().then((j) => Promise.reject(j.detail || "Failed to load concept"))))
       .then((d) => {
         if (cancelled) return;
         const p = parseConcept(d.markdown || "");
-        setState({ loading: false, frontmatter: p.frontmatter, body: p.body, error: "" });
+        setState({ loading: false, frontmatter: p.frontmatter, body: p.body, related: p.related, error: "" });
       })
-      .catch((err) => { if (!cancelled) setState({ loading: false, frontmatter: "", body: "", error: String(err) }); });
+      .catch((err) => { if (!cancelled) setState({ loading: false, frontmatter: "", body: "", related: [], error: String(err) }); });
     return () => { cancelled = true; };
   }, [jobId, node && node.id]);
 
@@ -512,6 +525,22 @@ function ConceptPanel({ jobId, node, degree, onClose }) {
                 {paragraphs.map((p, i) => (
                   <p key={i} className="mb-3.5 text-[14px] leading-relaxed text-[#b7bcc4]">{p}</p>
                 ))}
+                {state.related.length > 0 && onCite && (
+                  <div className="mt-4 border-t border-white/[0.06] pt-4">
+                    <div className="mb-2 font-mono text-[11px] uppercase tracking-wider text-faint">Related concepts</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {state.related.map((id) => (
+                        <button
+                          key={id}
+                          onClick={() => onCite(id)}
+                          className="rounded-md border border-white/[0.1] bg-elevated px-2 py-1 font-mono text-[11px] text-muted transition-colors hover:border-accent hover:text-accent"
+                        >
+                          {id}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </React.Fragment>
             )}
           </div>
@@ -732,6 +761,7 @@ function GraphStage({ phase, scan, graph, degree, jobId, pathIds, selectedId, se
               node={selectedId ? graph.nodes.find((n) => n.id === selectedId) : null}
               degree={degree}
               onClose={() => setSelectedId(null)}
+              onCite={setSelectedId}
             />
 
             <div className="pointer-events-none absolute bottom-3 left-4 z-10 hidden sm:block">

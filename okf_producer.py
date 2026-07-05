@@ -67,33 +67,74 @@ def draft_concept(concept: Concept, source: str) -> str:
     return response.content
 
 
-def _render_frontmatter(concept: Concept) -> str:
-    lines = ["---", f"type: {concept.type}", f"id: {concept.id}", f"path: {concept.path}"]
-    if concept.links:
-        lines.append("links:")
-        lines.extend(f"  - {link}" for link in concept.links)
-    else:
-        lines.append("links: []")
+def _first_sentence(prose: str, limit: int = 200) -> str:
+    """Derive a one-sentence `description` from the drafted prose (OKF recommended)."""
+    text = (prose or "").strip().replace("\n", " ")
+    if not text:
+        return ""
+    match = re.search(r"(.+?[.!?])(\s|$)", text)
+    sentence = match.group(1) if match else text
+    return sentence[:limit].strip()
+
+
+def _yaml_scalar(value: str) -> str:
+    """Double-quote a YAML scalar so colons/quotes in a description stay valid."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _render_frontmatter(concept: Concept, description: str, timestamp: str) -> str:
+    # OKF v0.1: `type` is the only required key; title/description/resource/tags/
+    # timestamp are the recommended optional keys. Identity is the file path.
+    lines = [
+        "---",
+        f"type: {concept.type}",
+        f"title: {concept.id}",
+    ]
+    if description:
+        lines.append(f"description: {_yaml_scalar(description)}")
+    lines.append(f"resource: {concept.path}")
+    lines.append("tags:")
+    lines.append("  - python")
+    lines.append(f"  - {concept.type}")
+    lines.append(f"timestamp: {timestamp}")
     lines.append("---")
     return "\n".join(lines)
 
 
-def _write_index(out_dir: str, concepts: List[Concept]) -> None:
+def _render_links_section(concept: Concept) -> str:
+    """Inter-concept links as standard markdown links in the body (OKF canonical form),
+    using absolute bundle-relative URLs like [pkg/utils](/pkg/utils.md)."""
+    if not concept.links:
+        return ""
+    lines = ["## Related concepts", ""]
+    lines.extend(f"- [{link}](/{link}.md)" for link in concept.links)
+    return "\n".join(lines)
+
+
+def _write_index(out_dir: str, entries: List[tuple]) -> None:
+    # OKF index.md: no frontmatter; `* [Title](url) - short description` lines.
     lines = ["# Index", ""]
-    for concept in sorted(concepts, key=lambda c: c.id):
-        lines.append(f"- [{concept.id}]({concept.id}.md) ({concept.type})")
+    for concept_id, description in sorted(entries):
+        line = f"* [{concept_id}](/{concept_id}.md)"
+        if description:
+            line += f" - {description}"
+        lines.append(line)
     with open(os.path.join(out_dir, "index.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
 
-def _write_log(out_dir: str, concepts: List[Concept]) -> None:
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    log_path = os.path.join(out_dir, "log.md")
-    is_new = not os.path.exists(log_path)
-    with open(log_path, "a", encoding="utf-8") as f:
-        if is_new:
-            f.write("# Log\n\n")
-        f.write(f"- {timestamp} generated {len(concepts)} concept(s)\n")
+def _write_log(out_dir: str, concepts: List[Concept], date: str) -> None:
+    # OKF log.md: date-grouped entries, newest first, entries begin with a bold category.
+    lines = [
+        "# Log",
+        "",
+        f"## {date}",
+        "",
+        f"- **Creation** Generated {len(concepts)} concept(s) from the repository.",
+        "",
+    ]
+    with open(os.path.join(out_dir, "log.md"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
 
 
 def build_bundle(
@@ -107,25 +148,38 @@ def build_bundle(
         concepts = scan_repo(repo_root)
 
     os.makedirs(out_dir, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    timestamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    date = now.strftime("%Y-%m-%d")
+
     total = len(concepts)
+    index_entries: List[tuple] = []
     for i, concept in enumerate(concepts):
         source_path = os.path.join(repo_root, concept.path.replace("/", os.sep))
         with open(source_path, "r", encoding="utf-8", errors="replace") as f:
             source = f.read()
 
         prose = strip_code_fences(draft_fn(concept, source))
-        frontmatter = _render_frontmatter(concept)
+        description = _first_sentence(prose)
+        frontmatter = _render_frontmatter(concept, description, timestamp)
+        links_section = _render_links_section(concept)
+
+        parts = [frontmatter, prose]
+        if links_section:
+            parts.append(links_section)
+        content = "\n\n".join(parts) + "\n"
 
         concept_path = os.path.join(out_dir, *concept.id.split("/")) + ".md"
         os.makedirs(os.path.dirname(concept_path) or out_dir, exist_ok=True)
         with open(concept_path, "w", encoding="utf-8") as f:
-            f.write(frontmatter + "\n\n" + prose + "\n")
+            f.write(content)
 
+        index_entries.append((concept.id, description))
         if on_progress is not None:
             on_progress(i + 1, total)
 
-    _write_index(out_dir, concepts)
-    _write_log(out_dir, concepts)
+    _write_index(out_dir, index_entries)
+    _write_log(out_dir, concepts, date)
     return concepts
 
 

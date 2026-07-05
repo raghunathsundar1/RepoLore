@@ -23,8 +23,11 @@ retrieval. That visible path is the whole point.
 
 - **Deterministic structure, LLM prose.** Links come from real imports resolved with
   Python's `ast` — the model never invents edges.
-- **OKF bundle.** One markdown concept per file with YAML frontmatter (`type`, `id`,
-  `path`, `links`), plus a reserved `index.md` and `log.md`. Downloadable as a zip.
+- **OKF bundle.** Targets the [Open Knowledge Format v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
+  (Google Cloud): one markdown concept per file, required `type` frontmatter plus the
+  recommended `title`/`description`/`resource`/`tags`/`timestamp`, and inter-concept
+  links as **standard markdown links in the body** (`[x](/x.md)`). Reserved `index.md`
+  and `log.md`. Downloadable as a zip and portable to any OKF-compliant consumer.
 - **Interactive graph.** Force-directed, degree-sized nodes, hover labels,
   click-to-open concept, zoom/pan.
 - **Traversal chat.** A LangGraph agent (`entry → plan → traverse → answer`) that
